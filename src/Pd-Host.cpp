@@ -24,6 +24,15 @@ static const int MAX_BUFFER_SIZE = 4096;
 
 struct PureData;
 
+// Forward declaration for MIDI hook
+void midiByteHook(int port, int byte);
+void midiNoteHook(int channel, int pitch, int velocity);
+void midiControlChangeHook(int channel, int controller, int value);
+void midiProgramChangeHook(int channel, int value);
+void midiPitchBendHook(int channel, int value);
+void midiAfterTouchHook(int channel, int value);
+void midiPolyAfterTouchHook(int channel, int pitch, int value);
+
 struct ProcessBlock {
     float sampleRate = 0.f;
     float sampleTime = 0.f;
@@ -101,7 +110,7 @@ struct LibPDEngine : ScriptEngine {
         }
     }
     void sendInitialStates(const ProcessBlock* block);
-    static void receiveToRack(const char* source, const char* symbol, int argc, t_atom* argv);
+    static void send_toHost(const char* source, const char* symbol, int argc, t_atom* argv);
     bool knobChanged(const float* knobs, int idx);
     bool switchChanged(const bool* knobs, int idx);
     void sendKnob(const int idx, const float value);
@@ -141,10 +150,18 @@ struct LibPDEngine : ScriptEngine {
             fprintf(stderr, "libpd: %s\n", s);
         });
         libpd_set_messagehook([](const char* source, const char* symbol, int argc, t_atom* argv) {
-            receiveToRack(source, symbol, argc, argv);
+            send_toHost(source, symbol, argc, argv);
         });
         libpd_init_audio(NUM_ROWS, NUM_ROWS, _sampleRate);
-        libpd_bind("toRack");
+        libpd_bind("toHost");
+       
+        libpd_set_midibytehook(midiByteHook);
+        libpd_set_noteonhook(midiNoteHook);
+        libpd_set_controlchangehook(midiControlChangeHook);
+        libpd_set_programchangehook(midiProgramChangeHook);
+        libpd_set_pitchbendhook(midiPitchBendHook);
+        libpd_set_aftertouchhook(midiAfterTouchHook);
+        libpd_set_polyaftertouchhook(midiPolyAfterTouchHook);
 
         // compute audio    [; pd dsp 1(
         libpd_start_message(1); // one entry in list
@@ -217,56 +234,6 @@ struct LibPDEngine : ScriptEngine {
     }
 };
 
-void LibPDEngine::receiveToRack(const char* source, const char* symbol, int argc, t_atom* argv) {
-    LibPDEngine* engine = g_current_engine;
-    if (!engine) return;
-    
-    if (strcmp(source, "toRack") != 0) return;
-    
-    std::string selector = symbol;
-    
-    // Handle lights
-    int light_idx = -1;
-    try {
-        light_idx = engine->_light_map.at(selector);
-        if (argc == 3) {
-            engine->_lights[light_idx][0] = libpd_get_float(&argv[0]);
-            engine->_lights[light_idx][1] = libpd_get_float(&argv[1]);
-            engine->_lights[light_idx][2] = libpd_get_float(&argv[2]);
-        }
-        return;
-    } catch (...) {}
-    
-    // Handle switch lights
-    int switch_idx = -1;
-    try {
-        switch_idx = engine->_switchLight_map.at(selector);
-        if (argc == 3) {
-            engine->_switchLights[switch_idx][0] = libpd_get_float(&argv[0]);
-            engine->_switchLights[switch_idx][1] = libpd_get_float(&argv[1]);
-            engine->_switchLights[switch_idx][2] = libpd_get_float(&argv[2]);
-        }
-        return;
-    } catch (...) {}
-    
-    // Handle display
-    if (selector == "display") {
-        engine->_utility[0] = "display";
-        engine->_utility[1] = "";
-        for (int i = 0; i < argc; i++) {
-            if (i > 0) engine->_utility[1] += " ";
-            if (libpd_is_float(&argv[i])) {
-                char buf[32];
-                snprintf(buf, sizeof(buf), "%g", libpd_get_float(&argv[i]));
-                engine->_utility[1] += buf;
-            } else if (libpd_is_symbol(&argv[i])) {
-                engine->_utility[1] += libpd_get_symbol(&argv[i]);
-            }
-        }
-        engine->_display_is_valid = true;
-    }
-}
-
 bool LibPDEngine::knobChanged(const float* knobs, int i) {
     bool knob_changed = false;
     if (_old_knobs[i] != knobs[i]) {
@@ -312,14 +279,14 @@ void LibPDEngine::sendKnob(const int idx, const float value) {
     std::string knob = "K" + std::to_string(idx + 1);
     libpd_start_message(1);
     libpd_add_float(value);
-    libpd_finish_message("fromRack", knob.c_str());
+    libpd_finish_message("fromHost", knob.c_str());
 }
 
 void LibPDEngine::sendSwitch(const int idx, const bool value) {
     std::string sw = "S" + std::to_string(idx + 1);
     libpd_start_message(1);
     libpd_add_float(value);
-    libpd_finish_message("fromRack", sw.c_str());
+    libpd_finish_message("fromHost", sw.c_str());
 }
 
 void LibPDEngine::sendInitialStates(const ProcessBlock* block) {
@@ -446,7 +413,20 @@ struct PureData : Module {
 		ENUMS(SWITCH_LIGHTS, NUM_ROWS * 3),
 		NUM_LIGHTS
 	};
-
+    
+    // midi out
+    uint8_t midiRunningStatus = 0;
+    uint8_t midiDataBuffer[2] = {0, 0};
+    int midiDataIndex = 0;
+    int midiDataBytesNeeded = 0;
+    
+    // midi in
+    uint8_t runningStatus = 0;
+    uint8_t dataBuffer[2] = {0, 0};
+    int dataIndex = 0;
+    int dataBytesNeeded = 0;
+    bool inSysex = false;
+    
 	std::string message;
 	std::string path;
 	std::string script;
@@ -464,6 +444,10 @@ struct PureData : Module {
 	std::string unsecureScript;
 	bool securityRequested = false;
 	bool securityAccepted = false;
+    
+    midi::InputQueue midiInput;
+//    midi::OutputQueue midiOutput;
+    midi::Output midiOutput;
 
 	PureData() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -478,6 +462,39 @@ struct PureData : Module {
 
 		block = new ProcessBlock;
 		setPath("");
+
+// MIDI
+        midiInput.setDriverId(0);
+        fprintf(stderr, "MIDI Input driver set to: %s\n", midiInput.getDriver()->getName().c_str());
+        // List available drivers
+        auto driverIds = midi::getDriverIds();
+        fprintf(stderr, "Available MIDI Input drivers:\n");
+        for (int id : driverIds) {
+            midi::Driver* driver = midi::getDriver(id);
+            if (driver) {
+                fprintf(stderr, "  %d: %s\n", id, driver->getName().c_str());
+            }
+        }
+        auto deviceIds = midiInput.getDeviceIds();
+        if (deviceIds.empty()) {
+            fprintf(stderr, "No MIDI input devices found\n");
+        } else {
+            fprintf(stderr, "MIDI input devices:\n");
+            for (size_t i = 0; i < deviceIds.size(); i++) {
+                fprintf(stderr, "  %zu: %s\n", i, midiInput.getDeviceName(deviceIds[i]).c_str());
+            }
+        }
+        // List MIDI output devices
+        fprintf(stderr, "MIDI output driver: %s\n", midiOutput.getDriver()->getName().c_str());
+        auto outDeviceIds = midiOutput.getDeviceIds();
+        if (outDeviceIds.empty()) {
+            fprintf(stderr, "No MIDI output devices found\n");
+        } else {
+            fprintf(stderr, "MIDI output devices:\n");
+            for (size_t i = 0; i < outDeviceIds.size(); i++) {
+                fprintf(stderr, "  %zu: %s\n", i, midiOutput.getDeviceName(outDeviceIds[i]).c_str());
+            }
+        }
 	}
 
 	~PureData() {
@@ -490,6 +507,7 @@ struct PureData : Module {
 	}
 
 	void process(const ProcessArgs& args) override {
+//        fprintf(stderr, "process called, frame=%d, frameDivider=%d\n", frame, frameDivider);
 		// Load security-sandboxed script if the security warning message is accepted.
 		if (unsecureScript != "" && securityAccepted) {
 			setScript(unsecureScript);
@@ -514,9 +532,92 @@ struct PureData : Module {
 			return;
 		}
 
-		// Inputs
-		for (int i = 0; i < NUM_ROWS; i++)
-			block->inputs[i][bufferIndex] = inputs[IN_INPUTS + i].getVoltage();
+        // Process MIDI input
+        midi::Message msg;
+        while (midiInput.tryPop(&msg, args.frame)) {
+            for (size_t i = 0; i < msg.bytes.size(); i++) {
+                uint8_t byte = msg.bytes[i];
+                
+                // Send EVERY byte to raw MIDI input FIRST
+                libpd_midibyte(0, byte);
+                
+                // Realtime messages go to sysrealtimein
+                if (byte >= 0xF8) {
+                    libpd_sysrealtime(0, byte);
+                    continue;
+                }
+                
+                // Status byte (0x80-0xEF)
+                if (byte & 0x80) {
+                    // Store running status
+                    runningStatus = byte;
+                    dataBytesNeeded = 0;
+                    
+                    if ((byte & 0xF0) == 0xC0 || (byte & 0xF0) == 0xD0) {
+                        dataBytesNeeded = 1;
+                    } else if ((byte & 0xF0) >= 0x80 && (byte & 0xF0) <= 0xE0) {
+                        dataBytesNeeded = 2;
+                    } else if (byte == 0xF0) { // Sysex start
+                        inSysex = true;
+                        libpd_sysex(0, byte);
+                        continue;
+                    } else if (byte == 0xF7) { // Sysex end
+                        inSysex = false;
+                        libpd_sysex(0, byte);
+                        continue;
+                    } else {
+                        // Other system messages (F1-F6) already sent via libpd_midibyte above
+                        continue;
+                    }
+                    
+                    dataBuffer[0] = 0;
+                    dataBuffer[1] = 0;
+                    dataIndex = 0;
+                }
+                // Data byte
+                else {
+                    if (inSysex) {
+                        // Already sent via libpd_midibyte above
+                        continue;
+                    }
+                    
+                    if (runningStatus == 0) {
+                        continue;
+                    }
+                    
+                    dataBuffer[dataIndex++] = byte;
+                    
+                    if (dataIndex >= dataBytesNeeded) {
+                        int status = runningStatus;
+                        int channel = status & 0x0F;
+                        int type = status & 0xF0;
+                        
+                        if (type == 0x80) {
+                            libpd_noteon(channel, dataBuffer[0], 0);
+                        } else if (type == 0x90) {
+                            libpd_noteon(channel, dataBuffer[0], dataBuffer[1]);
+                        } else if (type == 0xA0) {
+                            libpd_polyaftertouch(channel, dataBuffer[0], dataBuffer[1]);
+                        } else if (type == 0xB0) {
+                            libpd_controlchange(channel, dataBuffer[0], dataBuffer[1]);
+                        } else if (type == 0xC0) {
+                            libpd_programchange(channel, dataBuffer[0]);
+                        } else if (type == 0xD0) {
+                            libpd_aftertouch(channel, dataBuffer[0]);
+                        } else if (type == 0xE0) {
+                            int value = (dataBuffer[1] << 7) | dataBuffer[0];
+                            libpd_pitchbend(channel, value - 8192);
+                        }
+                        
+                        dataIndex = 0;
+                    }
+                }
+            }
+        }
+        
+        // Inputs
+        for (int i = 0; i < NUM_ROWS; i++)
+            block->inputs[i][bufferIndex] = inputs[IN_INPUTS + i].getVoltage();
 
 		// Process block
 		if (++bufferIndex >= block->bufferSize) {
@@ -815,8 +916,268 @@ struct PureData : Module {
 //        if (system::getExtension(system::getFilename(path)) == "pd")
 			return settingsPdEditorPath;
 	}
+    
 };
 
+void midiByteHook(int port, int byte) {
+    LibPDEngine* engine = g_current_engine;
+    if (!engine || !engine->module) return;
+    
+    PureData* module = engine->module;
+    uint8_t b = (uint8_t)byte;
+    
+    // Status byte
+    if (b & 0x80) {
+        module->midiRunningStatus = b;
+        module->midiDataIndex = 0;
+        
+        // Determine bytes needed
+        uint8_t type = b & 0xF0;
+        if (type == 0xC0 || type == 0xD0) {
+            module->midiDataBytesNeeded = 1;
+        } else if ((type >= 0x80 && type <= 0xE0) || type == 0xF0) {
+            module->midiDataBytesNeeded = 2;
+        }
+        return;
+    }
+    
+    // Data byte
+    if (module->midiRunningStatus == 0) return;
+    
+    module->midiDataBuffer[module->midiDataIndex++] = b;
+    
+    // Send when we have all data bytes
+    if (module->midiDataIndex >= module->midiDataBytesNeeded) {
+        midi::Message msg;
+        msg.setSize(module->midiDataBytesNeeded + 1);
+        msg.bytes[0] = module->midiRunningStatus;
+        msg.bytes[1] = module->midiDataBuffer[0];
+        if (module->midiDataBytesNeeded > 1) {
+            msg.bytes[2] = module->midiDataBuffer[1];
+        }
+        module->midiOutput.sendMessage(msg);
+        module->midiDataIndex = 0;
+    }
+}
+
+void midiNoteHook(int channel, int pitch, int velocity) {
+    LibPDEngine* engine = g_current_engine;
+    if (!engine || !engine->module) return;
+    
+    PureData* module = engine->module;
+    uint8_t status = 0x90 | (channel & 0x0F);
+    
+    midi::Message msg;
+    msg.setSize(3);
+    msg.bytes[0] = status;
+    msg.bytes[1] = pitch;
+    msg.bytes[2] = velocity;
+    module->midiOutput.sendMessage(msg);
+}
+
+void midiControlChangeHook(int channel, int controller, int value) {
+    LibPDEngine* engine = g_current_engine;
+    if (!engine || !engine->module) return;
+    
+    PureData* module = engine->module;
+    uint8_t status = 0xB0 | (channel & 0x0F);
+    
+    midi::Message msg;
+    msg.setSize(3);
+    msg.bytes[0] = status;
+    msg.bytes[1] = controller;
+    msg.bytes[2] = value;
+    module->midiOutput.sendMessage(msg);
+}
+
+void midiProgramChangeHook(int channel, int value) {
+    LibPDEngine* engine = g_current_engine;
+    if (!engine || !engine->module) return;
+    
+    PureData* module = engine->module;
+    uint8_t status = 0xC0 | (channel & 0x0F);
+    
+    midi::Message msg;
+    msg.setSize(2);
+    msg.bytes[0] = status;
+    msg.bytes[1] = value;
+    module->midiOutput.sendMessage(msg);
+}
+
+void midiPitchBendHook(int channel, int value) {
+    LibPDEngine* engine = g_current_engine;
+    if (!engine || !engine->module) return;
+    
+    PureData* module = engine->module;
+    uint8_t status = 0xE0 | (channel & 0x0F);
+    int bend = value + 8192; // Convert from -8192-8191 to 0-16383
+    
+    midi::Message msg;
+    msg.setSize(3);
+    msg.bytes[0] = status;
+    msg.bytes[1] = bend & 0x7F;
+    msg.bytes[2] = (bend >> 7) & 0x7F;
+    module->midiOutput.sendMessage(msg);
+}
+
+void midiAfterTouchHook(int channel, int value) {
+    LibPDEngine* engine = g_current_engine;
+    if (!engine || !engine->module) return;
+    
+    PureData* module = engine->module;
+    uint8_t status = 0xD0 | (channel & 0x0F);
+    
+    midi::Message msg;
+    msg.setSize(2);
+    msg.bytes[0] = status;
+    msg.bytes[1] = value;
+    module->midiOutput.sendMessage(msg);
+}
+
+void midiPolyAfterTouchHook(int channel, int pitch, int value) {
+    LibPDEngine* engine = g_current_engine;
+    if (!engine || !engine->module) return;
+    
+    PureData* module = engine->module;
+    uint8_t status = 0xA0 | (channel & 0x0F);
+    
+    midi::Message msg;
+    msg.setSize(3);
+    msg.bytes[0] = status;
+    msg.bytes[1] = pitch;
+    msg.bytes[2] = value;
+    module->midiOutput.sendMessage(msg);
+}
+
+void LibPDEngine::send_toHost(const char* source, const char* symbol, int argc, t_atom* argv) {
+    LibPDEngine* engine = g_current_engine;
+    if (!engine) return;
+    
+    if (strcmp(source, "toHost") != 0) return;
+    
+    std::string selector = symbol;
+
+// Handle MIDI
+    // Set MIDI IN driver
+    if (selector == "midiindriver") {
+        if (argc == 1 && libpd_is_float(&argv[0])) {
+            int driverId = (int)libpd_get_float(&argv[0]);
+            engine->module->midiInput.setDriverId(driverId);
+            fprintf(stderr, "MIDI Input driver set to: %s\n", engine->module->midiInput.getDriver()->getName().c_str());
+            
+            // List devices for this driver
+            auto deviceIds = engine->module->midiInput.getDeviceIds();
+            if (deviceIds.empty()) {
+                fprintf(stderr, "No MIDI input devices found for this driver\n");
+            } else {
+                fprintf(stderr, "MIDI input devices:\n");
+                for (size_t i = 0; i < deviceIds.size(); i++) {
+                    fprintf(stderr, "  %zu: %s\n", i, engine->module->midiInput.getDeviceName(deviceIds[i]).c_str());
+                }
+            }
+        }
+        return;
+    }
+    // Set MIDI IN devices
+    if (selector == "midiindev") {
+        if (argc == 1 && libpd_is_float(&argv[0])) {
+            int deviceId = (int)libpd_get_float(&argv[0]);
+            if (deviceId == -1) {
+                engine->module->midiInput.setDeviceId(-1);
+                fprintf(stderr, "MIDI IN device set to: none\n");
+            } else {
+                auto deviceIds = engine->module->midiInput.getDeviceIds();
+                if (deviceId >= 0 && deviceId < (int)deviceIds.size()) {
+                    engine->module->midiInput.setDeviceId(deviceIds[deviceId]);
+                    fprintf(stderr, "MIDI IN device set to: %s\n", engine->module->midiInput.getDeviceName(engine->module->midiInput.getDeviceId()).c_str());
+                } else {
+                    fprintf(stderr, "Invalid MIDI IN device ID: %d\n", deviceId);
+                }
+            }
+        }
+        return;
+    }
+    // Set MIDI output driver
+    if (selector == "midioutdriver") {
+        if (argc == 1 && libpd_is_float(&argv[0])) {
+            int driverId = (int)libpd_get_float(&argv[0]);
+            engine->module->midiOutput.setDriverId(driverId);
+            fprintf(stderr, "MIDI output driver set to: %s\n", engine->module->midiOutput.getDriver()->getName().c_str());
+            
+            auto deviceIds = engine->module->midiOutput.getDeviceIds();
+            if (deviceIds.empty()) {
+                fprintf(stderr, "No MIDI output devices found for this driver\n");
+            } else {
+                fprintf(stderr, "MIDI output devices:\n");
+                for (size_t i = 0; i < deviceIds.size(); i++) {
+                    fprintf(stderr, "  %zu: %s\n", i, engine->module->midiOutput.getDeviceName(deviceIds[i]).c_str());
+                }
+            }
+        }
+        return;
+    }
+    
+    // Set MIDI output device
+    if (selector == "midioutdev") {
+        if (argc == 1 && libpd_is_float(&argv[0])) {
+            int deviceId = (int)libpd_get_float(&argv[0]);
+            if (deviceId == -1) {
+                engine->module->midiOutput.setDeviceId(-1);
+                fprintf(stderr, "MIDI output device set to: none\n");
+            } else {
+                auto deviceIds = engine->module->midiOutput.getDeviceIds();
+                if (deviceId >= 0 && deviceId < (int)deviceIds.size()) {
+                    engine->module->midiOutput.setDeviceId(deviceIds[deviceId]);
+                    fprintf(stderr, "MIDI output device set to: %s\n", engine->module->midiOutput.getDeviceName(engine->module->midiOutput.getDeviceId()).c_str());
+                } else {
+                    fprintf(stderr, "Invalid MIDI output device ID: %d\n", deviceId);
+                }
+            }
+        }
+        return;
+    }
+    
+    // Handle lights
+    int light_idx = -1;
+    try {
+        light_idx = engine->_light_map.at(selector);
+        if (argc == 3) {
+            engine->_lights[light_idx][0] = libpd_get_float(&argv[0]);
+            engine->_lights[light_idx][1] = libpd_get_float(&argv[1]);
+            engine->_lights[light_idx][2] = libpd_get_float(&argv[2]);
+        }
+        return;
+    } catch (...) {}
+    
+    // Handle switch lights
+    int switch_idx = -1;
+    try {
+        switch_idx = engine->_switchLight_map.at(selector);
+        if (argc == 3) {
+            engine->_switchLights[switch_idx][0] = libpd_get_float(&argv[0]);
+            engine->_switchLights[switch_idx][1] = libpd_get_float(&argv[1]);
+            engine->_switchLights[switch_idx][2] = libpd_get_float(&argv[2]);
+        }
+        return;
+    } catch (...) {}
+    
+    // Handle display
+    if (selector == "display") {
+        engine->_utility[0] = "display";
+        engine->_utility[1] = "";
+        for (int i = 0; i < argc; i++) {
+            if (i > 0) engine->_utility[1] += " ";
+            if (libpd_is_float(&argv[i])) {
+                char buf[32];
+                snprintf(buf, sizeof(buf), "%g", libpd_get_float(&argv[i]));
+                engine->_utility[1] += buf;
+            } else if (libpd_is_symbol(&argv[i])) {
+                engine->_utility[1] += libpd_get_symbol(&argv[i]);
+            }
+        }
+        engine->_display_is_valid = true;
+    }
+}
 
 void ScriptEngine::display(const std::string& message) {
 	module->message = message;
