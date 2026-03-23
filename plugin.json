@@ -1,0 +1,25 @@
+{
+  "slug": "EL-LOCUS-SOLUS",
+  "name": "EL LOCUS SOLUS",
+  "version": "2.6.6",
+  "license": "GPL-3.0-or-later",
+  "brand": "EL-LOCUS-SOLUS",
+  "author": "Alexandre Torres Porres",
+  "authorEmail": "porres@gmail.com",
+  "authorUrl": "https://www.patreon.com/porres/",
+  "pluginUrl": "https://vcvrack.com/EL-LOCUS-SOLUS-Pd-Host.html",
+  "manualUrl": "https://vcvrack.com/EL-LOCUS-SOLUS-Pd-Host.html#manual",
+  "sourceUrl": "https://github.com/EL-LOCUS-SOLUS/VCV-PdHost",
+  "donateUrl": "https://www.patreon.com/porres/",
+  "changelogUrl": "https://github.com/EL-LOCUS-SOLUS/VCV-PdHost/blob/master/CHANGELOG.md",
+  "modules": [
+    {
+      "slug": "Pd-Host",
+      "name": "Pd Host",
+      "description": "Run Pure Data (Pd) patches in VCV Rack via libpd.",
+      "tags": [
+        "External"
+      ]
+    }
+  ]
+}
