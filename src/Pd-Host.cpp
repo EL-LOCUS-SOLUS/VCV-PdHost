@@ -101,7 +101,7 @@ struct LibPDEngine : ScriptEngine {
         }
     }
     void sendInitialStates(const ProcessBlock* block);
-    static void receiveLights(const char* s);
+    static void receiveToRack(const char* source, const char* symbol, int argc, t_atom* argv);
     bool knobChanged(const float* knobs, int idx);
     bool switchChanged(const bool* knobs, int idx);
     void sendKnob(const int idx, const float value);
@@ -137,19 +137,19 @@ struct LibPDEngine : ScriptEngine {
         // Set thread-local variable to track current engine for callbacks
         g_current_engine = this;
 
-        libpd_set_printhook((t_libpd_printhook)libpd_print_concatenator);
-/*        libpd_set_printhook([](const char* s) {
+        libpd_set_concatenated_printhook([](const char* s) {
             fprintf(stderr, "libpd: %s\n", s);
-        });*/
-        libpd_set_concatenated_printhook(receiveLights);
+        });
+        libpd_set_messagehook([](const char* source, const char* symbol, int argc, t_atom* argv) {
+            receiveToRack(source, symbol, argc, argv);
+        });
         libpd_init_audio(NUM_ROWS, NUM_ROWS, _sampleRate);
+        libpd_bind("toRack");
 
         // compute audio    [; pd dsp 1(
         libpd_start_message(1); // one entry in list
         libpd_add_float(1.0f);
         libpd_finish_message("pd", "dsp");
-//        std::string name = string::filename(path);
-//        std::string dir  = string::directory(path);
         std::string name = system::getFilename(path);
         std::string dir  = system::getDirectory(path);
         libpd_openfile(name.c_str(), dir.c_str());
@@ -217,100 +217,53 @@ struct LibPDEngine : ScriptEngine {
     }
 };
 
-void LibPDEngine::receiveLights(const char* s) {
-    // Get the current engine instance from thread-local storage
+void LibPDEngine::receiveToRack(const char* source, const char* symbol, int argc, t_atom* argv) {
     LibPDEngine* engine = g_current_engine;
-    if (!engine) {
-        return;  // No engine instance set
-    }
+    if (!engine) return;
     
-    std::string str = std::string(s);
-    std::vector<std::string> atoms = split(str, ' ');
-
-    if (atoms[0] == "toRack:") {
-        // parse lights list
-        bool light_is_valid = true;
-        int light_idx = -1;
-        try {
-            light_idx = _light_map.at(atoms[1]);      // map::at throws an out-of-range
+    if (strcmp(source, "toRack") != 0) return;
+    
+    std::string selector = symbol;
+    
+    // Handle lights
+    int light_idx = -1;
+    try {
+        light_idx = engine->_light_map.at(selector);
+        if (argc == 3) {
+            engine->_lights[light_idx][0] = libpd_get_float(&argv[0]);
+            engine->_lights[light_idx][1] = libpd_get_float(&argv[1]);
+            engine->_lights[light_idx][2] = libpd_get_float(&argv[2]);
         }
-        catch (const std::out_of_range& oor) {
-            light_is_valid = false;
-            //display("Warning:"+atoms[1]+" not found!");
+        return;
+    } catch (...) {}
+    
+    // Handle switch lights
+    int switch_idx = -1;
+    try {
+        switch_idx = engine->_switchLight_map.at(selector);
+        if (argc == 3) {
+            engine->_switchLights[switch_idx][0] = libpd_get_float(&argv[0]);
+            engine->_switchLights[switch_idx][1] = libpd_get_float(&argv[1]);
+            engine->_switchLights[switch_idx][2] = libpd_get_float(&argv[2]);
         }
-        //std::cout << v[1] << ", " << g_led_map[v[1]] << std::endl;
-        if (light_is_valid && atoms.size() == 5) {
-            engine->_lights[light_idx][0] = stof(atoms[2]); // red
-            engine->_lights[light_idx][1] = stof(atoms[3]); // green
-            engine->_lights[light_idx][2] = stof(atoms[4]); // blue
-        }
-        else {
-            // error
-        }
-        // parse switch lights list
-        bool switchLight_is_valid = true;
-        int switchLight_idx = -1;
-        try {
-            switchLight_idx = _switchLight_map.at(atoms[1]);      // map::at throws an out-of-range
-        }
-        catch (const std::out_of_range& oor) {
-            switchLight_is_valid = false;
-            //display("Warning:"+atoms[1]+" not found!");
-        }
-        //std::cout << v[1] << ", " << g_led_map[v[1]] << std::endl;
-        if (switchLight_is_valid && atoms.size() == 5) {
-            engine->_switchLights[switchLight_idx][0] = stof(atoms[2]); // red
-            engine->_switchLights[switchLight_idx][1] = stof(atoms[3]); // green
-            engine->_switchLights[switchLight_idx][2] = stof(atoms[4]); // blue
-        }
-        else {
-            // error
-        }
-        // parse utility/display messages
-        bool utility_is_valid = true;
-        try {
-            _utility_map.at(atoms[1]);      // map::at throws an out-of-range
-        }
-        catch (const std::out_of_range& oor) {
-            utility_is_valid = false;
-            //g_display_is_valid = true;
-            //display("Warning:"+atoms[1]+" not found!");
-        }
-        //std::cout << v[1] << ", " << g_led_map[v[1]] << std::endl;
-        if (utility_is_valid && atoms.size() >= 3) {
-            engine->_utility[0] = atoms[1]; // display
-            engine->_utility[1] = "";
-            for (unsigned i = 0; i < atoms.size() - 2; i++) {
-                engine->_utility[1] += " " + atoms[i + 2]; // concatenate message
-            }
-            engine->_display_is_valid = true;
-        }
-        else {
-            // error
-        }
-    }
-    else {
-        bool utility_is_valid = true;
-        int utility_idx = -1;
-        try {
-            utility_idx = _utility_map.at(atoms[0]);      // map::at throws an out-of-range
-        }
-        catch (const std::out_of_range& oor) {
-            WARN("PureData libpd: %s", s);
-            utility_is_valid = false;
-            //display("Warning:"+atoms[1]+" not found!");
-            // print out on command line
-        }
-        if (utility_is_valid) {
-            switch (utility_idx) {
-                case 1:
-                    WARN("PureData libpd: %s", s);
-                    break;
-
-                default:
-                    break;
+        return;
+    } catch (...) {}
+    
+    // Handle display
+    if (selector == "display") {
+        engine->_utility[0] = "display";
+        engine->_utility[1] = "";
+        for (int i = 0; i < argc; i++) {
+            if (i > 0) engine->_utility[1] += " ";
+            if (libpd_is_float(&argv[i])) {
+                char buf[32];
+                snprintf(buf, sizeof(buf), "%g", libpd_get_float(&argv[i]));
+                engine->_utility[1] += buf;
+            } else if (libpd_is_symbol(&argv[i])) {
+                engine->_utility[1] += libpd_get_symbol(&argv[i]);
             }
         }
+        engine->_display_is_valid = true;
     }
 }
 
@@ -910,20 +863,6 @@ struct MessageChoice : LedDisplayChoice {
             text = "Running Pd-" + version;
         }
     }
-
-/*	void draw(const DrawArgs& args) override {
-		nvgScissor(args.vg, RECT_ARGS(args.clipBox));
-		if (font->handle >= 0) {
-			nvgFillColor(args.vg, color);
-			nvgFontFaceId(args.vg, font->handle);
-			nvgTextLetterSpacing(args.vg, 0.0);
-			nvgTextLineHeight(args.vg, 1.08);
-
-			nvgFontSize(args.vg, 12);
-			nvgTextBox(args.vg, textOffset.x, textOffset.y, box.size.x - textOffset.x, text.c_str(), NULL);
-		}
-		nvgResetScissor(args.vg);
-	}*/
 
     void draw(const DrawArgs& args) override {
         nvgScissor(args.vg, RECT_ARGS(args.clipBox));
