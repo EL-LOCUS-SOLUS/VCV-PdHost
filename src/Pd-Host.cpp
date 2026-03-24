@@ -945,12 +945,12 @@ struct PureDataWidget : ModuleWidget {
 		addParam(createParamCentered<PB61303>(mm2px(Vec(56.099, 80.151)), module, PureData::SWITCH_PARAMS + 4));
 		addParam(createParamCentered<PB61303>(mm2px(Vec(68.099, 80.151)), module, PureData::SWITCH_PARAMS + 5));
 
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(8.099, 96.025)), module, PureData::IN_INPUTS + 0));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(20.099, 96.025)), module, PureData::IN_INPUTS + 1));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(32.099, 96.025)), module, PureData::IN_INPUTS + 2));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(44.099, 96.025)), module, PureData::IN_INPUTS + 3));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(56.099, 96.025)), module, PureData::IN_INPUTS + 4));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(68.099, 96.025)), module, PureData::IN_INPUTS + 5));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(8.099, 97.25)), module, PureData::IN_INPUTS + 0));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(20.099, 97.25)), module, PureData::IN_INPUTS + 1));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(32.099, 97.25)), module, PureData::IN_INPUTS + 2));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(44.099, 97.25)), module, PureData::IN_INPUTS + 3));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(56.099, 97.25)), module, PureData::IN_INPUTS + 4));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(68.099, 97.25)), module, PureData::IN_INPUTS + 5));
 
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(8.099, 112.25)), module, PureData::OUT_OUTPUTS + 0));
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(20.099, 112.25)), module, PureData::OUT_OUTPUTS + 1));
