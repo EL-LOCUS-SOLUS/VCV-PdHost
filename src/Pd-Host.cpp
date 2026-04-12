@@ -10,7 +10,7 @@
 #include <sstream>
 #include <thread>
 #include <mutex>
-//#include <efsw/efsw.h>
+// #include <efsw/efsw.h>
 #if defined ARCH_WIN
     #include <windows.h>
 #endif
@@ -19,7 +19,7 @@ using namespace rack;
 
 Plugin* pluginInstance;
 
-static const int NUM_ROWS = 6;
+static const int N_IN_OUT = 6;
 static const int MAX_BUFFER_SIZE = 4096;
 
 struct PureData;
@@ -33,19 +33,19 @@ void midiPitchBendHook(int channel, int value);
 void midiAfterTouchHook(int channel, int value);
 void midiPolyAfterTouchHook(int channel, int pitch, int value);
 
-struct ProcessBlock {
+struct ProcessBlock{
     float sampleRate = 0.f;
     float sampleTime = 0.f;
     int bufferSize = 1;
-    float inputs[NUM_ROWS][MAX_BUFFER_SIZE] = {};
-    float outputs[NUM_ROWS][MAX_BUFFER_SIZE] = {};
-    float knobs[NUM_ROWS] = {};
-    bool switches[NUM_ROWS] = {};
-    float lights[NUM_ROWS][3] = {};
-    float switchLights[NUM_ROWS][3] = {};
+    float inputs[N_IN_OUT][MAX_BUFFER_SIZE] = {};
+    float outputs[N_IN_OUT][MAX_BUFFER_SIZE] = {};
+    float knobs[N_IN_OUT] = {};
+    bool switches[N_IN_OUT] = {};
+    float lights[N_IN_OUT][3] = {};
+    float switchLights[N_IN_OUT][3] = {};
 };
 
-struct ScriptEngine {
+struct ScriptEngine{
     // Virtual methods for subclasses
     virtual ~ScriptEngine() {}
     /** Executes the script.
@@ -69,12 +69,12 @@ struct ScriptEngine {
     PureData* module = NULL;
 };
 
-static const int BUFFERSIZE = MAX_BUFFER_SIZE * NUM_ROWS;
+static const int BUFFERSIZE = MAX_BUFFER_SIZE * N_IN_OUT;
 
 // Thread-local storage for current engine instance being processed
 static thread_local struct LibPDEngine* g_current_engine = nullptr;
 
-static std::vector<std::string> split(const std::string& s, char delim) {
+static std::vector<std::string> split(const std::string& s, char delim){
     std::vector<std::string> result;
     std::stringstream ss(s);
     std::string item;
@@ -84,7 +84,7 @@ static std::vector<std::string> split(const std::string& s, char delim) {
     return result;
 }
 
-struct LibPDEngine : ScriptEngine {
+struct LibPDEngine : ScriptEngine{
     t_pdinstance* _lpd = NULL;
     int _pd_block_size = 64;
     int _sampleRate = 0;
@@ -92,13 +92,13 @@ struct LibPDEngine : ScriptEngine {
     bool _init = true;
 
     // Per-instance state
-    float _lights[NUM_ROWS][3] = {};
-    float _switchLights[NUM_ROWS][3] = {};
+    float _lights[N_IN_OUT][3] = {};
+    float _switchLights[N_IN_OUT][3] = {};
     std::string _utility[2] = {};
     bool _display_is_valid = false;
 
-    float _old_knobs[NUM_ROWS] = {};
-    bool  _old_switches[NUM_ROWS] = {};
+    float _old_knobs[N_IN_OUT] = {};
+    bool  _old_switches[N_IN_OUT] = {};
     float _output[BUFFERSIZE] = {};
     float _input[BUFFERSIZE] = {};//  = (float*)malloc(1024*2*sizeof(float));
     const static std::map<std::string, int> _light_map;
@@ -152,7 +152,7 @@ struct LibPDEngine : ScriptEngine {
         libpd_set_messagehook([](const char* source, const char* symbol, int argc, t_atom* argv) {
             send_toHost(source, symbol, argc, argv);
         });
-        libpd_init_audio(NUM_ROWS, NUM_ROWS, _sampleRate);
+        libpd_init_audio(N_IN_OUT, N_IN_OUT, _sampleRate);
         libpd_bind("toHost");
        
         libpd_set_midibytehook(midiByteHook);
@@ -180,7 +180,7 @@ struct LibPDEngine : ScriptEngine {
         ProcessBlock* block = getProcessBlock();
 
         // get samples
-        int rows = NUM_ROWS;
+        int rows = N_IN_OUT;
         for (int s = 0; s < _pd_block_size; s++) {
             for (int r = 0; r < rows; r++) {
                 _input[s * rows + r] = block->inputs[r][s];
@@ -191,25 +191,25 @@ struct LibPDEngine : ScriptEngine {
         // Set thread-local variable to track current engine for callbacks
         g_current_engine = this;
         // knobs
-        for (int i = 0; i < NUM_ROWS; i++) {
+        for (int i = 0; i < N_IN_OUT; i++) {
             if (knobChanged(block->knobs, i)) {
                 sendKnob(i, block->knobs[i]);
             }
         }
         // lights
-        for (int i = 0; i < NUM_ROWS; i++) {
+        for (int i = 0; i < N_IN_OUT; i++) {
             block->lights[i][0] = _lights[i][0];
             block->lights[i][1] = _lights[i][1];
             block->lights[i][2] = _lights[i][2];
         }
         // switch lights
-        for (int i = 0; i < NUM_ROWS; i++) {
+        for (int i = 0; i < N_IN_OUT; i++) {
             block->switchLights[i][0] = _switchLights[i][0];
             block->switchLights[i][1] = _switchLights[i][1];
             block->switchLights[i][2] = _switchLights[i][2];
         }
         // switches
-        for (int i = 0; i < NUM_ROWS; i++) {
+        for (int i = 0; i < N_IN_OUT; i++) {
             if (switchChanged(block->switches, i)) {
                 sendSwitch(i, block->switches[i]);
             }
@@ -291,12 +291,12 @@ void LibPDEngine::sendSwitch(const int idx, const bool value) {
 
 void LibPDEngine::sendInitialStates(const ProcessBlock* block) {
     // knobs
-    for (int i = 0; i < NUM_ROWS; i++) {
+    for (int i = 0; i < N_IN_OUT; i++) {
         sendKnob(i, block->knobs[i]);
         sendSwitch(i, block->knobs[i]);
     }
 
-    for (int i = 0; i < NUM_ROWS; i++) {
+    for (int i = 0; i < N_IN_OUT; i++) {
         _lights[i][0] = 0;
         _lights[i][1] = 0;
         _lights[i][2] = 0;
@@ -396,21 +396,21 @@ void setPdEditorDialog() {
 
 struct PureData : Module {
 	enum ParamIds {
-		ENUMS(KNOB_PARAMS, NUM_ROWS),
-		ENUMS(SWITCH_PARAMS, NUM_ROWS),
+		ENUMS(KNOB_PARAMS, N_IN_OUT),
+		ENUMS(SWITCH_PARAMS, N_IN_OUT),
 		NUM_PARAMS
 	};
 	enum InputIds {
-		ENUMS(IN_INPUTS, NUM_ROWS),
+		ENUMS(IN_INPUTS, N_IN_OUT),
 		NUM_INPUTS
 	};
 	enum OutputIds {
-		ENUMS(OUT_OUTPUTS, NUM_ROWS),
+		ENUMS(OUT_OUTPUTS, N_IN_OUT),
 		NUM_OUTPUTS
 	};
 	enum LightIds {
-		ENUMS(LIGHT_LIGHTS, NUM_ROWS * 3),
-		ENUMS(SWITCH_LIGHTS, NUM_ROWS * 3),
+		ENUMS(LIGHT_LIGHTS, N_IN_OUT * 3),
+		ENUMS(SWITCH_LIGHTS, N_IN_OUT * 3),
 		NUM_LIGHTS
 	};
     
@@ -436,7 +436,7 @@ struct PureData : Module {
 	int frameDivider;
 	// This is dynamically allocated to have some protection against script bugs.
 	ProcessBlock* block;
-	int bufferIndex = 0;
+	int buf_idx = 0;
 
 //	efsw_watcher efsw = NULL;
 
@@ -451,13 +451,13 @@ struct PureData : Module {
 
 	PureData() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		for (int i = 0; i < NUM_ROWS; i++)
+		for (int i = 0; i < N_IN_OUT; i++)
 			configParam(KNOB_PARAMS + i, 0.f, 1.f, 0.5f, string::f("Knob %d", i + 1));
-		for (int i = 0; i < NUM_ROWS; i++)
+		for (int i = 0; i < N_IN_OUT; i++)
 			configParam(SWITCH_PARAMS + i, 0.f, 1.f, 0.f, string::f("Switch %d", i + 1));
-		// for (int i = 0; i < NUM_ROWS; i++)
+		// for (int i = 0; i < N_IN_OUT; i++)
 		// 	configInput(IN_INPUTS + i, string::f("#%d", i + 1));
-		// for (int i = 0; i < NUM_ROWS; i++)
+		// for (int i = 0; i < N_IN_OUT; i++)
 		// 	configOutput(OUT_OUTPUTS + i, string::f("#%d", i + 1));
 
 		block = new ProcessBlock;
@@ -521,13 +521,13 @@ struct PureData : Module {
 
 		// Clear outputs if no script is running
 		if (!scriptEngine) {
-			for (int i = 0; i < NUM_ROWS; i++)
+			for (int i = 0; i < N_IN_OUT; i++)
 				for (int c = 0; c < 3; c++)
 					lights[LIGHT_LIGHTS + i * 3 + c].setBrightness(0.f);
-			for (int i = 0; i < NUM_ROWS; i++)
+			for (int i = 0; i < N_IN_OUT; i++)
 				for (int c = 0; c < 3; c++)
 					lights[SWITCH_LIGHTS + i * 3 + c].setBrightness(0.f);
-			for (int i = 0; i < NUM_ROWS; i++)
+			for (int i = 0; i < N_IN_OUT; i++)
 				outputs[OUT_OUTPUTS + i].setVoltage(0.f);
 			return;
 		}
@@ -614,26 +614,35 @@ struct PureData : Module {
                 }
             }
         }
-        
-        // Inputs
-        for (int i = 0; i < NUM_ROWS; i++)
-            block->inputs[i][bufferIndex] = inputs[IN_INPUTS + i].getVoltage();
-
-		// Process block
-		if (++bufferIndex >= block->bufferSize) {
+// Inputs
+//        for(int i = 0; i < N_IN_OUT; i++)
+//            block->inputs[i][buf_idx] = inputs[IN_INPUTS + i].getVoltage();
+        for(int i = 0; i < N_IN_OUT; i++){
+            int ch = inputs[i].getChannels();
+            if(ch > 1)
+                ch = 1;
+            for(int c = 0; c < 1; c++){
+                if(c < ch)
+                    block->inputs[i*1+c][buf_idx] = inputs[i].getVoltage(c);
+                else
+                    block->inputs[i*1+c][buf_idx] = 0.f;
+            }
+        }
+// Process block
+		if (++buf_idx >= block->bufferSize) {
 			std::lock_guard<std::mutex> lock(scriptMutex);
-			bufferIndex = 0;
+			buf_idx = 0;
 
 			// Block settings
 			block->sampleRate = args.sampleRate;
 			block->sampleTime = args.sampleTime;
 
 			// Params
-			for (int i = 0; i < NUM_ROWS; i++)
+			for (int i = 0; i < N_IN_OUT; i++)
 				block->knobs[i] = params[KNOB_PARAMS + i].getValue();
-			for (int i = 0; i < NUM_ROWS; i++)
+			for (int i = 0; i < N_IN_OUT; i++)
 				block->switches[i] = params[SWITCH_PARAMS + i].getValue() > 0.f;
-			float oldKnobs[NUM_ROWS];
+			float oldKnobs[N_IN_OUT];
 			std::memcpy(oldKnobs, block->knobs, sizeof(oldKnobs));
 
 			// Run ScriptEngine's process function
@@ -651,22 +660,34 @@ struct PureData : Module {
 
 			// Params
 			// Only set params if values were changed by the script. This avoids issues when the user is manipulating them from the UI thread.
-			for (int i = 0; i < NUM_ROWS; i++) {
+			for (int i = 0; i < N_IN_OUT; i++) {
 				if (block->knobs[i] != oldKnobs[i])
 					params[KNOB_PARAMS + i].setValue(block->knobs[i]);
 			}
 			// Lights
-			for (int i = 0; i < NUM_ROWS; i++)
+			for (int i = 0; i < N_IN_OUT; i++)
 				for (int c = 0; c < 3; c++)
 					lights[LIGHT_LIGHTS + i * 3 + c].setBrightness(block->lights[i][c]);
-			for (int i = 0; i < NUM_ROWS; i++)
+			for (int i = 0; i < N_IN_OUT; i++)
 				for (int c = 0; c < 3; c++)
 					lights[SWITCH_LIGHTS + i * 3 + c].setBrightness(block->switchLights[i][c]);
 		}
 
-		// Outputs
-		for (int i = 0; i < NUM_ROWS; i++)
-			outputs[OUT_OUTPUTS + i].setVoltage(block->outputs[i][bufferIndex]);
+// Outputs
+//		for (int i = 0; i < N_IN_OUT; i++)
+//			outputs[OUT_OUTPUTS + i].setVoltage(block->outputs[i][buf_idx]);
+        for(int i = 0; i < N_IN_OUT; i++){
+            int ch = inputs[IN_INPUTS+i].getChannels();
+            if(ch > 1)
+                ch = 1;
+            for(int c = 0; c < 1; c++){
+                float v = 0.f;
+                if(c < ch)
+                    v = block->outputs[i*1+c][buf_idx];
+                outputs[OUT_OUTPUTS + i].setVoltage(v, c);
+            }
+            outputs[OUT_OUTPUTS + i].setChannels(ch);
+        }
 	}
 
 	void setPath(std::string path) {
@@ -726,7 +747,7 @@ struct PureData : Module {
         // Reset process state
         frameDivider = 32;
         frame = 0;
-        bufferIndex = 0;
+        buf_idx = 0;
         // Reset block
         *block = ProcessBlock();
 
