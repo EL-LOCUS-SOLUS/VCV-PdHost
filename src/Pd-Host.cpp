@@ -470,7 +470,32 @@ struct PureData : Module {
         fprintf(stderr, ">>> after config\n");
         INFO("INFO >>> after config");
         
-        for(int i = 0; i < N_IN_OUT; i++){
+        INFO("INFO >>> creating Knobs");
+        configParam(KNOB_PARAMS + 0, 0.f, 1.f, 0.5f, "Knob 1");
+        INFO("INFO >>> creating Knob 1");
+        configParam(KNOB_PARAMS + 1, 0.f, 1.f, 0.5f, "Knob 2");
+        INFO("INFO >>> creating Knob 2");
+        configParam(KNOB_PARAMS + 2, 0.f, 1.f, 0.5f, "Knob 3");
+        INFO("INFO >>> creating Knob 3");
+        configParam(KNOB_PARAMS + 3, 0.f, 1.f, 0.5f, "Knob 4");
+        INFO("INFO >>> creating Knob 4");
+        configParam(KNOB_PARAMS + 4, 0.f, 1.f, 0.5f, "Knob 5");
+        INFO("INFO >>> creating Knob 5");
+        configParam(KNOB_PARAMS + 5, 0.f, 1.f, 0.5f, "Knob 6");
+        INFO("INFO >>> creating Knob 6");
+        
+        INFO("INFO >>> after KNOB_PARAMS");
+        
+        configParam(SWITCH_PARAMS + 0, 0.f, 1.f, 0.f, "Switch 1");
+        configParam(SWITCH_PARAMS + 1, 0.f, 1.f, 0.f, "Switch 2");
+        configParam(SWITCH_PARAMS + 2, 0.f, 1.f, 0.f, "Switch 3");
+        configParam(SWITCH_PARAMS + 3, 0.f, 1.f, 0.f, "Switch 4");
+        configParam(SWITCH_PARAMS + 4, 0.f, 1.f, 0.f, "Switch 5");
+        configParam(SWITCH_PARAMS + 5, 0.f, 1.f, 0.f, "Switch 6");
+        
+        INFO("INFO >>> after SWITCH_PARAMS");
+        
+/*        for(int i = 0; i < N_IN_OUT; i++){
             INFO("INFO >>> creating knob %d of %d", i, N_IN_OUT);
             configParam(KNOB_PARAMS + i, 0.f, 1.f, 0.5f, string::f("Knob %d", i + 1));
         }
@@ -479,7 +504,7 @@ struct PureData : Module {
             INFO("INFO >>> creating switch %d of %d", i, N_IN_OUT);
             configParam(SWITCH_PARAMS + i, 0.f, 1.f, 0.f, string::f("Switch %d", i + 1));
         }
-        INFO("INFO >>> after SWITCH_PARAMS");
+        INFO("INFO >>> after SWITCH_PARAMS");*/
         // for (int i = 0; i < N_IN_OUT; i++)
         //     configInput(IN_INPUTS + i, string::f("#%d", i + 1));
         // for (int i = 0; i < N_IN_OUT; i++)
