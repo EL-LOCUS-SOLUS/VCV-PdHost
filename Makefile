@@ -4,7 +4,7 @@ FLAGS += -Idep/include
 CFLAGS +=
 CXXFLAGS +=
 
-LDFLAGS += -Wl,-export_dynamic
+LDFLAGS +=
 SOURCES += src/Pd-Host.cpp
 
 DISTRIBUTABLES += res patches
@@ -19,14 +19,16 @@ DEPS += $(libpd)
 FLAGS += -Idep/include/libpd -DHAVE_LIBDL
 
 ifdef ARCH_WIN
-	# PD_INTERNAL leaves the function declarations for libpd unchanged
-	# not specifying that flag would enable the  "EXTERN __declspec(dllexport) extern" macro
-	# which throws a linker error. I guess this macro should only be used for the windows
-	# specific .dll dynamic linking format.
-	# The corresponding #define resides in "m_pd.h" inside th Pure Data sources
-	FLAGS += -DPD_INTERNAL -Ofast
-	LDFLAGS += -Wl,--export-all-symbols
-	LDFLAGS += -lws2_32
+    # PD_INTERNAL leaves the function declarations for libpd unchanged
+    # not specifying that flag would enable the  "EXTERN __declspec(dllexport) extern" macro
+    # which throws a linker error. I guess this macro should only be used for the windows
+    # specific .dll dynamic linking format.
+    # The corresponding #define resides in "m_pd.h" inside th Pure Data sources
+    FLAGS += -DPD_INTERNAL -Ofast
+    LDFLAGS += -Wl,--export-all-symbols
+    LDFLAGS += -lws2_32
+else
+    LDFLAGS += -Wl,--export-dynamic
 endif
 
 $(libpd):
@@ -44,9 +46,9 @@ else
 ifdef ARCH_WIN
 	# libpd relies on OS=Windows_NT for platform detection even when cross-compiling.
 	# Also force heap allocation path to avoid missing alloca.h in some MinGW toolchains.
-	cd dep/libpd && $(MAKE) OS=Windows_NT MULTI=true STATIC=true ADDITIONAL_CFLAGS='-DPD_LONGINTTYPE="long long"'
+	cd dep/libpd && $(MAKE) OS=Windows_NT MULTI=true STATIC=true ADDITIONAL_CFLAGS='-DPD_LONGINTTYPE="long long"' ADDITIONAL_LDFLAGS='-static-libstdc++'
 else
-	cd dep/libpd && $(MAKE) MULTI=true STATIC=true ADDITIONAL_CFLAGS='-DPD_LONGINTTYPE="long long"'
+	cd dep/libpd && $(MAKE) MULTI=true STATIC=true ADDITIONAL_CFLAGS='-DPD_LONGINTTYPE="long long"' ADDITIONAL_LDFLAGS='-static-libstdc++ -static-libgcc'
 endif
 endif
 	cd dep/libpd && $(MAKE) install prefix="$(DEP_PATH)"
