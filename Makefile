@@ -27,8 +27,14 @@ ifdef ARCH_WIN
     FLAGS += -DPD_INTERNAL -Ofast
     LDFLAGS += -Wl,--export-all-symbols
     LDFLAGS += -lws2_32
-else
+endif
+
+ifdef ARCH_LIN
     LDFLAGS += -Wl,--export-dynamic
+endif
+
+ifdef ARCH_MAC
+    LDFLAGS += -Wl,-export_dynamic
 endif
 
 $(libpd):
