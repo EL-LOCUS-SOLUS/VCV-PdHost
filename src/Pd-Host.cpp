@@ -516,8 +516,6 @@ struct PureData : Module {
 			return;
 		}
 
-        int sampleIndex = buf_idx;
-
         // Process MIDI input
         midi::Message msg;
         while (midiInput.tryPop(&msg, args.frame)) {
@@ -609,18 +607,10 @@ struct PureData : Module {
                 ch = 1;
             for(int c = 0; c < 1; c++){
                 if(c < ch)
-                    block->inputs[i*1+c][sampleIndex] = inputs[i].getVoltage(c);
+                    block->inputs[i*1+c][buf_idx] = inputs[i].getVoltage(c);
                 else
-                    block->inputs[i*1+c][sampleIndex] = 0.f;
+                    block->inputs[i*1+c][buf_idx] = 0.f;
             }
-        }
-
-// Outputs
-//		for (int i = 0; i < N_IN_OUT; i++)
-//			outputs[OUT_OUTPUTS + i].setVoltage(block->outputs[i][buf_idx]);
-        for(int i = 0; i < N_IN_OUT; i++){
-            outputs[OUT_OUTPUTS + i].setVoltage(block->outputs[i][sampleIndex], 0);
-            outputs[OUT_OUTPUTS + i].setChannels(1);
         }
 
 // Process block
@@ -667,6 +657,14 @@ struct PureData : Module {
 				for (int c = 0; c < 3; c++)
 					lights[SWITCH_LIGHTS + i * 3 + c].setBrightness(block->switchLights[i][c]);
 		}
+
+// Outputs
+//		for (int i = 0; i < N_IN_OUT; i++)
+//			outputs[OUT_OUTPUTS + i].setVoltage(block->outputs[i][buf_idx]);
+        for(int i = 0; i < N_IN_OUT; i++){
+            outputs[OUT_OUTPUTS + i].setVoltage(block->outputs[i][buf_idx], 0);
+            outputs[OUT_OUTPUTS + i].setChannels(1);
+        }
 	}
 
 	void setPath(std::string path) {
