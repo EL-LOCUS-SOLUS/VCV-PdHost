@@ -47,7 +47,7 @@ ifdef ARCH_MAC
 	# So in order for Mac 10.15 (for example) to make a build that works on Mac 10.7+, we have to manually add DEP_MAC_SDK_FLAGS to CFLAGS and LDFLAGS.
 	# We can't just add the environment's CFLAGS/LDFLAGS because `-march=nocona` makes libpd segfault when initialized.
 	# Perhaps inline assembly is used in libpd? Who knows.
-	cd dep/libpd && $(MAKE) MULTI=true STATIC=true ADDITIONAL_CFLAGS='-DPD_LONGINTTYPE="long long" $(DEP_MAC_SDK_FLAGS) -stdlib=libc++' ADDITIONAL_LDFLAGS='$(DEP_MAC_SDK_FLAGS) -stdlib=libc++'
+	cd dep/libpd && $(MAKE) UNAME=Darwin MULTI=true STATIC=true ADDITIONAL_CFLAGS='-DPD_LONGINTTYPE="long long" $(DEP_MAC_SDK_FLAGS) -stdlib=libc++' ADDITIONAL_LDFLAGS='$(DEP_MAC_SDK_FLAGS) -stdlib=libc++'
 else
 ifdef ARCH_WIN
 	# libpd relies on OS=Windows_NT for platform detection even when cross-compiling.
